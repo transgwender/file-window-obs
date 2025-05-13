@@ -1,0 +1,80 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float width_ratio;
+uniform float height_ratio;
+uniform float text_ratio;
+
+uniform texture2d ui_left;
+uniform texture2d ui_topleft;
+uniform texture2d ui_top;
+uniform texture2d ui_topright;
+uniform texture2d ui_right;
+uniform texture2d ui_bottomright;
+uniform texture2d ui_bottom;
+uniform texture2d ui_bottomleft;
+
+sampler_state texSampler {
+	AddressU  = Clamp;
+	AddressV  = Clamp;
+	Filter    = Linear;
+};
+
+struct VertexInOut {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertexInOut VShader(VertexInOut vert_in)
+{
+	VertexInOut vert_out;
+	vert_out.pos = mul(float4(vert_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv = vert_in.uv;
+	return vert_out;
+}
+
+float4 PShader(VertexInOut fragment_in) : TARGET
+{
+	float4 ui = float4(0,0,0,0);
+
+	if (fragment_in.uv.x < width_ratio && fragment_in.uv.y < height_ratio) {
+		float2 scaled = float2(fragment_in.uv.x / width_ratio, fragment_in.uv.y / height_ratio);
+		ui = ui_topleft.Sample(texSampler, scaled);
+	} else if (fragment_in.uv.x < width_ratio && fragment_in.uv.y > (1-height_ratio)) {
+		float2 scaled = float2(fragment_in.uv.x / width_ratio, (fragment_in.uv.y - (1-height_ratio)) / height_ratio);
+		ui = ui_bottomleft.Sample(texSampler, scaled);
+	} else if (fragment_in.uv.x < width_ratio) {
+		float2 scaled = float2(fragment_in.uv.x / width_ratio, (fragment_in.uv.y - height_ratio) / height_ratio);
+		ui = ui_left.Sample(texSampler, scaled);
+	} else if (fragment_in.uv.x > (1-width_ratio) && fragment_in.uv.y < height_ratio) {
+		float2 scaled = float2((fragment_in.uv.x - (1-width_ratio)) / width_ratio, fragment_in.uv.y / height_ratio);
+		ui = ui_topright.Sample(texSampler, scaled);
+	} else if (fragment_in.uv.x > (1-width_ratio) && fragment_in.uv.y > (1-height_ratio)) {
+		float2 scaled = float2((fragment_in.uv.x - (1-width_ratio)) / width_ratio, (fragment_in.uv.y - (1-height_ratio)) / height_ratio);
+		ui = ui_bottomright.Sample(texSampler, scaled);
+	} else if (fragment_in.uv.x > (1-width_ratio)) {
+		float2 scaled = float2((fragment_in.uv.x - (1-width_ratio)) / width_ratio, (fragment_in.uv.y - height_ratio) / height_ratio);
+		ui = ui_right.Sample(texSampler, scaled);
+	} else if (fragment_in.uv.y < height_ratio) { // Top part
+		float s1 = (fragment_in.uv.x - 0.5) / width_ratio;
+		float s2 = 2*s1/text_ratio;
+		float s3 = (s2 + 1.0)/2.0;
+		float2 scaled = float2(s3, fragment_in.uv.y / height_ratio);
+		ui = ui_top.Sample(texSampler, scaled);
+	} else if (fragment_in.uv.y > (1-height_ratio)) {
+		float2 scaled = float2((fragment_in.uv.x - width_ratio) / width_ratio, (fragment_in.uv.y - (1-height_ratio)) / height_ratio);
+		ui = ui_bottom.Sample(texSampler, scaled);
+	}
+	if (ui.w > 0.5) return ui;
+	return image.Sample(texSampler, fragment_in.uv);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VShader(vert_in);
+		pixel_shader  = PShader(fragment_in);
+	}
+}
+
