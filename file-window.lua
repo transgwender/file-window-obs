@@ -263,7 +263,6 @@ function script_update(settings)
       ui_bottomleft_texture = nil
     end
   end
-
 end
 
 -- Called on script startup
@@ -296,6 +295,8 @@ source_info.create = function (settings, source)
   data.width_ratio = 1  -- Dummy value during initialization phase
   data.height_ratio = 1 -- Dummy value during initialization phase
   data.text_ratio = 1   -- Dummy value during initialization phase
+  data.ui_text_texture = nil
+  data.ui_text_texture_path = ""
 
   -- Compiles the effect from a .effect file in the same folder as the Lua script
   -- See https://obsproject.com/docs/graphics.html
@@ -400,21 +401,26 @@ source_info.video_render = function (data)
   -- Sets shader data for the draw if the shader compilation was successful
   if not data.effect_compilation_failed then
 
-    data.ui_length = obs.gs_texture_get_width(ui_left_texture.texture)
-    data.text_length = obs.gs_texture_get_width(ui_top_texture.texture)
-
-    data.width_ratio = data.ui_length / data.width * data.scale
-    data.height_ratio = data.ui_length / data.height * data.scale
-    data.text_ratio = data.text_length / data.ui_length
+    if data.ui_text_texture ~= nil then
+      data.text_length = obs.gs_texture_get_width(data.ui_text_texture.texture)
+      obs.gs_effect_set_texture(data.params.ui_top, data.ui_text_texture.texture)
+    else
+      data.text_length = obs.gs_texture_get_width(ui_top_texture.texture)
+      obs.gs_effect_set_texture(data.params.ui_top, ui_top_texture.texture)
+    end
     
     obs.gs_effect_set_texture(data.params.ui_left, ui_left_texture.texture)
     obs.gs_effect_set_texture(data.params.ui_topleft, ui_topleft_texture.texture)
-    obs.gs_effect_set_texture(data.params.ui_top, ui_top_texture.texture)
     obs.gs_effect_set_texture(data.params.ui_topright, ui_topright_texture.texture)
     obs.gs_effect_set_texture(data.params.ui_right, ui_right_texture.texture)
     obs.gs_effect_set_texture(data.params.ui_bottomright, ui_bottomright_texture.texture)
     obs.gs_effect_set_texture(data.params.ui_bottom, ui_bottom_texture.texture)
     obs.gs_effect_set_texture(data.params.ui_bottomleft, ui_bottomleft_texture.texture)
+
+    data.ui_length = obs.gs_texture_get_width(ui_left_texture.texture)
+    data.width_ratio = data.ui_length / data.width * data.scale
+    data.height_ratio = data.ui_length / data.height * data.scale
+    data.text_ratio = data.text_length / data.ui_length
 
     obs.gs_effect_set_float(data.params.width_ratio, data.width_ratio)
     obs.gs_effect_set_float(data.params.height_ratio, data.height_ratio)
@@ -437,6 +443,8 @@ end
 source_info.get_properties = function(data)
   local props = obs.obs_properties_create()
   obs.obs_properties_add_float_slider(props, "ui_scale", "Ui Scale", 0.1, 2.0, 0.1)
+  
+ 	obs.obs_properties_add_path(props, "ui_text_texture_path", "Ui Text File", obs.OBS_PATH_FILE, "Images (*.png)", nil)
 
   return props
 end
@@ -475,4 +483,31 @@ end
 -- Updates the internal data for this source upon settings change
 source_info.update = function(data, settings)
   data.scale = obs.obs_data_get_double(settings, "ui_scale")
+  
+  local path = obs.obs_data_get_string(settings, "ui_text_texture_path")
+  if data.ui_text_texture_path ~= path then
+    print("script_update() attempt reload " .. path)
+    data.ui_text_texture_path = path
+    -- Checks if another image was previously loaded to free it
+    if data.ui_text_texture ~= nil then
+      obs.gs_image_file_free(data.ui_text_texture)
+    end
+    -- Reads the new picture from storage and initializes the texture in the GPU
+    local image_file = obs.gs_image_file()
+    obs.gs_image_file_init(image_file, path)
+    if image_file.loaded then
+      obs.obs_enter_graphics()
+      obs.gs_image_file_init_texture(image_file)
+      obs.obs_leave_graphics()
+      data.ui_text_texture = image_file
+      print("script_update() success!")
+    else
+      -- Logs the error if the file cannot be read, except if it was the default value (empty)
+      if string.len(path) > 4 then
+        print("ERROR: Cannot load image file " .. path)
+      end
+      obs.gs_image_file_free(image_file)
+      data.ui_text_texture = nil
+    end
+  end
 end
